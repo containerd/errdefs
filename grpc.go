@@ -19,6 +19,7 @@ package errdefs
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -45,21 +46,37 @@ func ToGRPC(err error) error {
 
 	switch {
 	case IsInvalidArgument(err):
-		return status.Errorf(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, err.Error())
 	case IsNotFound(err):
-		return status.Errorf(codes.NotFound, err.Error())
+		return status.Error(codes.NotFound, err.Error())
 	case IsAlreadyExists(err):
-		return status.Errorf(codes.AlreadyExists, err.Error())
-	case IsFailedPrecondition(err):
-		return status.Errorf(codes.FailedPrecondition, err.Error())
+		return status.Error(codes.AlreadyExists, err.Error())
+	case IsFailedPrecondition(err) || IsConflict(err) || IsNotModified(err):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case IsUnavailable(err):
-		return status.Errorf(codes.Unavailable, err.Error())
+		return status.Error(codes.Unavailable, err.Error())
 	case IsNotImplemented(err):
-		return status.Errorf(codes.Unimplemented, err.Error())
+		return status.Error(codes.Unimplemented, err.Error())
 	case IsCanceled(err):
-		return status.Errorf(codes.Canceled, err.Error())
+		return status.Error(codes.Canceled, err.Error())
 	case IsDeadlineExceeded(err):
-		return status.Errorf(codes.DeadlineExceeded, err.Error())
+		return status.Error(codes.DeadlineExceeded, err.Error())
+	case IsUnauthorized(err):
+		return status.Error(codes.Unauthenticated, err.Error())
+	case IsPermissionDenied(err):
+		return status.Error(codes.PermissionDenied, err.Error())
+	case IsInternal(err):
+		return status.Error(codes.Internal, err.Error())
+	case IsDataLoss(err):
+		return status.Error(codes.DataLoss, err.Error())
+	case IsAborted(err):
+		return status.Error(codes.Aborted, err.Error())
+	case IsOutOfRange(err):
+		return status.Error(codes.OutOfRange, err.Error())
+	case IsResourceExhausted(err):
+		return status.Error(codes.ResourceExhausted, err.Error())
+	case IsUnknown(err):
+		return status.Error(codes.Unknown, err.Error())
 	}
 
 	return err
@@ -79,6 +96,8 @@ func FromGRPC(err error) error {
 		return nil
 	}
 
+	desc := errDesc(err)
+
 	var cls error // divide these into error classes, becomes the cause
 
 	switch code(err) {
@@ -91,18 +110,45 @@ func FromGRPC(err error) error {
 	case codes.Unavailable:
 		cls = ErrUnavailable
 	case codes.FailedPrecondition:
-		cls = ErrFailedPrecondition
+		if desc == ErrConflict.Error() || strings.HasSuffix(desc, ": "+ErrConflict.Error()) {
+			cls = ErrConflict
+		} else if desc == ErrNotModified.Error() || strings.HasSuffix(desc, ": "+ErrNotModified.Error()) {
+			cls = ErrNotModified
+		} else {
+			cls = ErrFailedPrecondition
+		}
 	case codes.Unimplemented:
 		cls = ErrNotImplemented
 	case codes.Canceled:
 		cls = context.Canceled
 	case codes.DeadlineExceeded:
 		cls = context.DeadlineExceeded
+	case codes.Aborted:
+		cls = ErrAborted
+	case codes.Unauthenticated:
+		cls = ErrUnauthenticated
+	case codes.PermissionDenied:
+		cls = ErrPermissionDenied
+	case codes.Internal:
+		cls = ErrInternal
+	case codes.DataLoss:
+		cls = ErrDataLoss
+	case codes.OutOfRange:
+		cls = ErrOutOfRange
+	case codes.ResourceExhausted:
+		cls = ErrResourceExhausted
 	default:
-		cls = ErrUnknown
+		if idx := strings.LastIndex(desc, unexpectedStatusPrefix); idx > 0 {
+			if status, err := strconv.Atoi(desc[idx+len(unexpectedStatusPrefix):]); err == nil && status >= 200 && status < 600 {
+				cls = errUnexpectedStatus{status}
+			}
+		}
+		if cls == nil {
+			cls = ErrUnknown
+		}
 	}
 
-	msg := rebaseMessage(cls, err)
+	msg := rebaseMessage(cls, desc)
 	if msg != "" {
 		err = fmt.Errorf("%s: %w", msg, cls)
 	} else {
@@ -117,8 +163,7 @@ func FromGRPC(err error) error {
 //
 // Effectively, we just remove the string of cls from the end of err if it
 // appears there.
-func rebaseMessage(cls error, err error) string {
-	desc := errDesc(err)
+func rebaseMessage(cls error, desc string) string {
 	clss := cls.Error()
 	if desc == clss {
 		return ""

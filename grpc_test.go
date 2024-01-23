@@ -88,6 +88,11 @@ func TestGRPCRoundTrip(t *testing.T) {
 			cause: ErrNotModified,
 			str:   "everything is the same: not modified",
 		},
+		{
+			input: fmt.Errorf("odd HTTP response: %w", FromHTTP(418)),
+			cause: errUnexpectedStatus{418},
+			str:   "odd HTTP response: unexpected status 418",
+		},
 	} {
 		t.Run(testcase.input.Error(), func(t *testing.T) {
 			t.Logf("input: %v", testcase.input)

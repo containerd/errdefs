@@ -14,7 +14,12 @@
    limitations under the License.
 */
 
-package errdefs
+// Package errgrpc provides utility functions for translating errors to
+// and from a gRPC context.
+//
+// The functions ToGRPC and ToNative can be used to map server-side and
+// client-side errors to the correct types.
+package errgrpc
 
 import (
 	"context"
@@ -24,6 +29,9 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/containerd/errdefs"
+	"github.com/containerd/errdefs/internal/cause"
 )
 
 // ToGRPC will attempt to map the backend containerd error into a grpc error,
@@ -45,37 +53,37 @@ func ToGRPC(err error) error {
 	}
 
 	switch {
-	case IsInvalidArgument(err):
+	case errdefs.IsInvalidArgument(err):
 		return status.Error(codes.InvalidArgument, err.Error())
-	case IsNotFound(err):
+	case errdefs.IsNotFound(err):
 		return status.Error(codes.NotFound, err.Error())
-	case IsAlreadyExists(err):
+	case errdefs.IsAlreadyExists(err):
 		return status.Error(codes.AlreadyExists, err.Error())
-	case IsFailedPrecondition(err) || IsConflict(err) || IsNotModified(err):
+	case errdefs.IsFailedPrecondition(err) || errdefs.IsConflict(err) || errdefs.IsNotModified(err):
 		return status.Error(codes.FailedPrecondition, err.Error())
-	case IsUnavailable(err):
+	case errdefs.IsUnavailable(err):
 		return status.Error(codes.Unavailable, err.Error())
-	case IsNotImplemented(err):
+	case errdefs.IsNotImplemented(err):
 		return status.Error(codes.Unimplemented, err.Error())
-	case IsCanceled(err):
+	case errdefs.IsCanceled(err):
 		return status.Error(codes.Canceled, err.Error())
-	case IsDeadlineExceeded(err):
+	case errdefs.IsDeadlineExceeded(err):
 		return status.Error(codes.DeadlineExceeded, err.Error())
-	case IsUnauthorized(err):
+	case errdefs.IsUnauthorized(err):
 		return status.Error(codes.Unauthenticated, err.Error())
-	case IsPermissionDenied(err):
+	case errdefs.IsPermissionDenied(err):
 		return status.Error(codes.PermissionDenied, err.Error())
-	case IsInternal(err):
+	case errdefs.IsInternal(err):
 		return status.Error(codes.Internal, err.Error())
-	case IsDataLoss(err):
+	case errdefs.IsDataLoss(err):
 		return status.Error(codes.DataLoss, err.Error())
-	case IsAborted(err):
+	case errdefs.IsAborted(err):
 		return status.Error(codes.Aborted, err.Error())
-	case IsOutOfRange(err):
+	case errdefs.IsOutOfRange(err):
 		return status.Error(codes.OutOfRange, err.Error())
-	case IsResourceExhausted(err):
+	case errdefs.IsResourceExhausted(err):
 		return status.Error(codes.ResourceExhausted, err.Error())
-	case IsUnknown(err):
+	case errdefs.IsUnknown(err):
 		return status.Error(codes.Unknown, err.Error())
 	}
 
@@ -85,13 +93,13 @@ func ToGRPC(err error) error {
 // ToGRPCf maps the error to grpc error codes, assembling the formatting string
 // and combining it with the target error string.
 //
-// This is equivalent to errdefs.ToGRPC(fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err))
+// This is equivalent to grpc.ToGRPC(fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err))
 func ToGRPCf(err error, format string, args ...interface{}) error {
 	return ToGRPC(fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err))
 }
 
-// FromGRPC returns the underlying error from a grpc service based on the grpc error code
-func FromGRPC(err error) error {
+// ToNative returns the underlying error from a grpc service based on the grpc error code
+func ToNative(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -102,49 +110,49 @@ func FromGRPC(err error) error {
 
 	switch code(err) {
 	case codes.InvalidArgument:
-		cls = ErrInvalidArgument
+		cls = errdefs.ErrInvalidArgument
 	case codes.AlreadyExists:
-		cls = ErrAlreadyExists
+		cls = errdefs.ErrAlreadyExists
 	case codes.NotFound:
-		cls = ErrNotFound
+		cls = errdefs.ErrNotFound
 	case codes.Unavailable:
-		cls = ErrUnavailable
+		cls = errdefs.ErrUnavailable
 	case codes.FailedPrecondition:
-		if desc == ErrConflict.Error() || strings.HasSuffix(desc, ": "+ErrConflict.Error()) {
-			cls = ErrConflict
-		} else if desc == ErrNotModified.Error() || strings.HasSuffix(desc, ": "+ErrNotModified.Error()) {
-			cls = ErrNotModified
+		if desc == errdefs.ErrConflict.Error() || strings.HasSuffix(desc, ": "+errdefs.ErrConflict.Error()) {
+			cls = errdefs.ErrConflict
+		} else if desc == errdefs.ErrNotModified.Error() || strings.HasSuffix(desc, ": "+errdefs.ErrNotModified.Error()) {
+			cls = errdefs.ErrNotModified
 		} else {
-			cls = ErrFailedPrecondition
+			cls = errdefs.ErrFailedPrecondition
 		}
 	case codes.Unimplemented:
-		cls = ErrNotImplemented
+		cls = errdefs.ErrNotImplemented
 	case codes.Canceled:
 		cls = context.Canceled
 	case codes.DeadlineExceeded:
 		cls = context.DeadlineExceeded
 	case codes.Aborted:
-		cls = ErrAborted
+		cls = errdefs.ErrAborted
 	case codes.Unauthenticated:
-		cls = ErrUnauthenticated
+		cls = errdefs.ErrUnauthenticated
 	case codes.PermissionDenied:
-		cls = ErrPermissionDenied
+		cls = errdefs.ErrPermissionDenied
 	case codes.Internal:
-		cls = ErrInternal
+		cls = errdefs.ErrInternal
 	case codes.DataLoss:
-		cls = ErrDataLoss
+		cls = errdefs.ErrDataLoss
 	case codes.OutOfRange:
-		cls = ErrOutOfRange
+		cls = errdefs.ErrOutOfRange
 	case codes.ResourceExhausted:
-		cls = ErrResourceExhausted
+		cls = errdefs.ErrResourceExhausted
 	default:
-		if idx := strings.LastIndex(desc, unexpectedStatusPrefix); idx > 0 {
-			if status, err := strconv.Atoi(desc[idx+len(unexpectedStatusPrefix):]); err == nil && status >= 200 && status < 600 {
-				cls = errUnexpectedStatus{status}
+		if idx := strings.LastIndex(desc, cause.UnexpectedStatusPrefix); idx > 0 {
+			if status, err := strconv.Atoi(desc[idx+len(cause.UnexpectedStatusPrefix):]); err == nil && status >= 200 && status < 600 {
+				cls = cause.ErrUnexpectedStatus{Status: status}
 			}
 		}
 		if cls == nil {
-			cls = ErrUnknown
+			cls = errdefs.ErrUnknown
 		}
 	}
 

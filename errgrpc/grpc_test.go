@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-package errdefs
+package errgrpc
 
 import (
 	"context"
@@ -24,7 +24,20 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/containerd/errdefs"
+	"github.com/containerd/errdefs/errhttp"
+	"github.com/containerd/errdefs/internal/cause"
 )
+
+func TestGRPCNilInput(t *testing.T) {
+	if err := ToGRPC(nil); err != nil {
+		t.Fatalf("Expected nil error, got %v", err)
+	}
+	if err := ToNative(nil); err != nil {
+		t.Fatalf("Expected nil error, got %v", err)
+	}
+}
 
 func TestGRPCRoundTrip(t *testing.T) {
 	errShouldLeaveAlone := errors.New("unknown to package")
@@ -35,28 +48,72 @@ func TestGRPCRoundTrip(t *testing.T) {
 		str   string
 	}{
 		{
-			input: ErrAlreadyExists,
-			cause: ErrAlreadyExists,
+			input: errdefs.ErrInvalidArgument,
+			cause: errdefs.ErrInvalidArgument,
 		},
 		{
-			input: ErrNotFound,
-			cause: ErrNotFound,
+			input: errdefs.ErrAlreadyExists,
+			cause: errdefs.ErrAlreadyExists,
+		},
+		{
+			input: errdefs.ErrNotFound,
+			cause: errdefs.ErrNotFound,
+		},
+		{
+			input: errdefs.ErrUnavailable,
+			cause: errdefs.ErrUnavailable,
+		},
+		{
+			input: errdefs.ErrNotImplemented,
+			cause: errdefs.ErrNotImplemented,
+		},
+		{
+			input: errdefs.ErrUnauthenticated,
+			cause: errdefs.ErrUnauthenticated,
+		},
+		{
+			input: errdefs.ErrPermissionDenied,
+			cause: errdefs.ErrPermissionDenied,
+		},
+		{
+			input: errdefs.ErrInternal,
+			cause: errdefs.ErrInternal,
+		},
+		{
+			input: errdefs.ErrDataLoss,
+			cause: errdefs.ErrDataLoss,
+		},
+		{
+			input: errdefs.ErrAborted,
+			cause: errdefs.ErrAborted,
+		},
+		{
+			input: errdefs.ErrOutOfRange,
+			cause: errdefs.ErrOutOfRange,
+		},
+		{
+			input: errdefs.ErrResourceExhausted,
+			cause: errdefs.ErrResourceExhausted,
+		},
+		{
+			input: errdefs.ErrUnknown,
+			cause: errdefs.ErrUnknown,
 		},
 		//nolint:dupword
 		{
-			input: fmt.Errorf("test test test: %w", ErrFailedPrecondition),
-			cause: ErrFailedPrecondition,
+			input: fmt.Errorf("test test test: %w", errdefs.ErrFailedPrecondition),
+			cause: errdefs.ErrFailedPrecondition,
 			str:   "test test test: failed precondition",
 		},
 		{
 			input: status.Errorf(codes.Unavailable, "should be not available"),
-			cause: ErrUnavailable,
+			cause: errdefs.ErrUnavailable,
 			str:   "should be not available: unavailable",
 		},
 		{
 			input: errShouldLeaveAlone,
-			cause: ErrUnknown,
-			str:   errShouldLeaveAlone.Error() + ": " + ErrUnknown.Error(),
+			cause: errdefs.ErrUnknown,
+			str:   errShouldLeaveAlone.Error() + ": " + errdefs.ErrUnknown.Error(),
 		},
 		{
 			input: context.Canceled,
@@ -79,18 +136,18 @@ func TestGRPCRoundTrip(t *testing.T) {
 			str:   "this is a test deadline exceeded: context deadline exceeded",
 		},
 		{
-			input: fmt.Errorf("something conflicted: %w", ErrConflict),
-			cause: ErrConflict,
+			input: fmt.Errorf("something conflicted: %w", errdefs.ErrConflict),
+			cause: errdefs.ErrConflict,
 			str:   "something conflicted: conflict",
 		},
 		{
-			input: fmt.Errorf("everything is the same: %w", ErrNotModified),
-			cause: ErrNotModified,
+			input: fmt.Errorf("everything is the same: %w", errdefs.ErrNotModified),
+			cause: errdefs.ErrNotModified,
 			str:   "everything is the same: not modified",
 		},
 		{
-			input: fmt.Errorf("odd HTTP response: %w", FromHTTP(418)),
-			cause: errUnexpectedStatus{418},
+			input: fmt.Errorf("odd HTTP response: %w", errhttp.ToNative(418)),
+			cause: cause.ErrUnexpectedStatus{Status: 418},
 			str:   "odd HTTP response: unexpected status 418",
 		},
 	} {
@@ -98,7 +155,7 @@ func TestGRPCRoundTrip(t *testing.T) {
 			t.Logf("input: %v", testcase.input)
 			gerr := ToGRPC(testcase.input)
 			t.Logf("grpc: %v", gerr)
-			ferr := FromGRPC(gerr)
+			ferr := ToNative(gerr)
 			t.Logf("recovered: %v", ferr)
 
 			if !errors.Is(ferr, testcase.cause) {
@@ -114,5 +171,4 @@ func TestGRPCRoundTrip(t *testing.T) {
 			}
 		})
 	}
-
 }

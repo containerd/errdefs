@@ -78,6 +78,21 @@ func TestGRPCRoundTrip(t *testing.T) {
 			cause: context.DeadlineExceeded,
 			str:   "this is a test deadline exceeded: context deadline exceeded",
 		},
+		{
+			input: fmt.Errorf("something conflicted: %w", ErrConflict),
+			cause: ErrConflict,
+			str:   "something conflicted: conflict",
+		},
+		{
+			input: fmt.Errorf("everything is the same: %w", ErrNotModified),
+			cause: ErrNotModified,
+			str:   "everything is the same: not modified",
+		},
+		{
+			input: fmt.Errorf("odd HTTP response: %w", FromHTTP(418)),
+			cause: errUnexpectedStatus{418},
+			str:   "odd HTTP response: unexpected status 418",
+		},
 	} {
 		t.Run(testcase.input.Error(), func(t *testing.T) {
 			t.Logf("input: %v", testcase.input)

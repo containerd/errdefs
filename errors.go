@@ -21,15 +21,11 @@
 //
 // To detect an error class, use the IsXXX functions to tell whether an error
 // is of a certain type.
-//
-// The functions ToGRPC and FromGRPC can be used to map server-side and
-// client-side errors to the correct types.
 package errdefs
 
 import (
 	"context"
 	"errors"
-	"fmt"
 )
 
 // Definitions of common error types used throughout containerd. All containerd
@@ -72,18 +68,6 @@ type errUnknown struct{}
 func (errUnknown) Error() string { return "unknown" }
 
 func (errUnknown) Unknown() {}
-
-type errUnexpectedStatus struct {
-	status int
-}
-
-const unexpectedStatusPrefix = "unexpected status "
-
-func (e errUnexpectedStatus) Error() string {
-	return fmt.Sprintf("%s%d", unexpectedStatusPrefix, e.status)
-}
-
-func (errUnexpectedStatus) Unknown() {}
 
 // unknown maps to Moby's "ErrUnknown"
 type unknown interface {

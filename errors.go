@@ -55,7 +55,7 @@ var (
 
 // cancelled maps to Moby's "ErrCancelled"
 type cancelled interface {
-	ErrCancelled()
+	Cancelled()
 }
 
 // IsCanceled returns true if the error is due to `context.Canceled`.

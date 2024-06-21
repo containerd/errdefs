@@ -69,6 +69,10 @@ func (errUnknown) Error() string { return "unknown" }
 
 func (errUnknown) Unknown() {}
 
+func (e errUnknown) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
+
 // unknown maps to Moby's "ErrUnknown"
 type unknown interface {
 	Unknown()
@@ -85,6 +89,10 @@ type errInvalidArgument struct{}
 func (errInvalidArgument) Error() string { return "invalid argument" }
 
 func (errInvalidArgument) InvalidParameter() {}
+
+func (e errInvalidArgument) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
 
 // invalidParameter maps to Moby's "ErrInvalidParameter"
 type invalidParameter interface {
@@ -113,6 +121,10 @@ func (errNotFound) Error() string { return "not found" }
 
 func (errNotFound) NotFound() {}
 
+func (e errNotFound) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
+
 // notFound maps to Moby's "ErrNotFound"
 type notFound interface {
 	NotFound()
@@ -127,6 +139,10 @@ type errAlreadyExists struct{}
 
 func (errAlreadyExists) Error() string { return "already exists" }
 
+func (e errAlreadyExists) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
+
 // IsAlreadyExists returns true if the error is due to an already existing
 // metadata item
 func IsAlreadyExists(err error) bool {
@@ -136,6 +152,10 @@ func IsAlreadyExists(err error) bool {
 type errPermissionDenied struct{}
 
 func (errPermissionDenied) Error() string { return "permission denied" }
+
+func (e errPermissionDenied) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
 
 // forbidden maps to Moby's "ErrForbidden"
 type forbidden interface {
@@ -152,6 +172,10 @@ type errResourceExhausted struct{}
 
 func (errResourceExhausted) Error() string { return "resource exhausted" }
 
+func (e errResourceExhausted) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
+
 // IsResourceExhausted returns true if the error is due to
 // a lack of resources or too many attempts.
 func IsResourceExhausted(err error) bool {
@@ -161,6 +185,10 @@ func IsResourceExhausted(err error) bool {
 type errFailedPrecondition struct{}
 
 func (e errFailedPrecondition) Error() string { return "failed precondition" }
+
+func (e errFailedPrecondition) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
 
 // IsFailedPrecondition returns true if an operation could not proceed due to
 // the lack of a particular condition
@@ -173,6 +201,10 @@ type errConflict struct{}
 func (errConflict) Error() string { return "conflict" }
 
 func (errConflict) Conflict() {}
+
+func (e errConflict) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
 
 // conflict maps to Moby's "ErrConflict"
 type conflict interface {
@@ -191,6 +223,10 @@ func (errNotModified) Error() string { return "not modified" }
 
 func (errNotModified) NotModified() {}
 
+func (e errNotModified) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
+
 // notModified maps to Moby's "ErrNotModified"
 type notModified interface {
 	NotModified()
@@ -206,6 +242,10 @@ type errAborted struct{}
 
 func (errAborted) Error() string { return "aborted" }
 
+func (e errAborted) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
+
 // IsAborted returns true if an operation was aborted.
 func IsAborted(err error) bool {
 	return errors.Is(err, errAborted{})
@@ -214,6 +254,10 @@ func IsAborted(err error) bool {
 type errOutOfRange struct{}
 
 func (errOutOfRange) Error() string { return "out of range" }
+
+func (e errOutOfRange) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
 
 // IsOutOfRange returns true if an operation could not proceed due
 // to data being out of the expected range.
@@ -226,6 +270,10 @@ type errNotImplemented struct{}
 func (errNotImplemented) Error() string { return "not implemented" }
 
 func (errNotImplemented) NotImplemented() {}
+
+func (e errNotImplemented) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
 
 // notImplemented maps to Moby's "ErrNotImplemented"
 type notImplemented interface {
@@ -243,6 +291,10 @@ func (errInternal) Error() string { return "internal" }
 
 func (errInternal) System() {}
 
+func (e errInternal) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
+
 // system maps to Moby's "ErrSystem"
 type system interface {
 	System()
@@ -258,6 +310,10 @@ type errUnavailable struct{}
 func (errUnavailable) Error() string { return "unavailable" }
 
 func (errUnavailable) Unavailable() {}
+
+func (e errUnavailable) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
 
 // unavailable maps to Moby's "ErrUnavailable"
 type unavailable interface {
@@ -275,6 +331,10 @@ func (errDataLoss) Error() string { return "data loss" }
 
 func (errDataLoss) DataLoss() {}
 
+func (e errDataLoss) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
+
 // dataLoss maps to Moby's "ErrDataLoss"
 type dataLoss interface {
 	DataLoss()
@@ -290,6 +350,10 @@ type errUnauthorized struct{}
 func (errUnauthorized) Error() string { return "unauthorized" }
 
 func (errUnauthorized) Unauthorized() {}
+
+func (e errUnauthorized) WithMessage(msg string) error {
+	return customMessage{e, msg}
+}
 
 // unauthorized maps to Moby's "ErrUnauthorized"
 type unauthorized interface {
@@ -307,6 +371,8 @@ func isInterface[T any](err error) bool {
 		switch x := err.(type) {
 		case T:
 			return true
+		case customMessage:
+			err = x.err
 		case interface{ Unwrap() error }:
 			err = x.Unwrap()
 			if err == nil {
@@ -323,4 +389,23 @@ func isInterface[T any](err error) bool {
 			return false
 		}
 	}
+}
+
+// customMessage is used to provide a defined error with a custom message.
+// The message is not wrapped but can be compared by the `Is(error) bool` interface.
+type customMessage struct {
+	err error
+	msg string
+}
+
+func (c customMessage) Is(err error) bool {
+	return c.err == err
+}
+
+func (c customMessage) As(target any) bool {
+	return errors.As(c.err, target)
+}
+
+func (c customMessage) Error() string {
+	return c.msg
 }

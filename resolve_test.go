@@ -61,6 +61,9 @@ func TestResolve(t *testing.T) {
 		{errors.Join(testUnavailable{}, ErrPermissionDenied), ErrUnavailable},
 		{errors.Join(errors.New("untyped join")), ErrUnknown},
 		{errors.Join(errors.New("untyped1"), errors.New("untyped2")), ErrUnknown},
+		{ErrNotFound.WithMessage("something else"), ErrNotFound},
+		{wrap(ErrNotFound.WithMessage("something else")), ErrNotFound},
+		{errors.Join(ErrNotFound.WithMessage("something else"), ErrPermissionDenied), ErrNotFound},
 	} {
 		name := fmt.Sprintf("%d-%s", i, errorString(tc.resolved))
 		tc := tc

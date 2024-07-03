@@ -66,6 +66,8 @@ func firstError(err error) error {
 			return err
 		}
 		switch e := err.(type) {
+		case customMessage:
+			err = e.err
 		case unknown:
 			return ErrUnknown
 		case invalidParameter:

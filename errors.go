@@ -26,6 +26,10 @@ package errdefs
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+
+	"github.com/containerd/errdefs/internal/types"
 )
 
 // Definitions of common error types used throughout containerd. All containerd
@@ -408,4 +412,68 @@ func (c customMessage) As(target any) bool {
 
 func (c customMessage) Error() string {
 	return c.msg
+}
+
+// errorValue is a general purpose container for errors.
+//
+// It is constructed through New and is used to ensure
+// the proper formatting behavior for the contents of
+// the error.
+type errorValue struct {
+	error
+}
+
+func (e errorValue) Format(st fmt.State, verb rune) {
+	format := fmt.FormatString(st, verb)
+	fmt.Fprintf(st, format, e.error)
+	if verb == 'v' && st.Flag('+') {
+		printStackTraces(st, e.error)
+	}
+}
+
+func (e errorValue) Unwrap() error {
+	return e.error
+}
+
+// New constructs a new error with the given format string.
+func New(format string, args ...interface{}) error {
+	return &errorValue{
+		error: fmt.Errorf(format, args...),
+	}
+}
+
+func printStackTraces(w io.Writer, err error) {
+	// Collect all stack traces from the error.
+	// Stored in a stack for efficiency and to prevent
+	// a recursive stack from piling up.
+	unvisited := []error{err}
+	for len(unvisited) > 0 {
+		// Pop the end.
+		cur := unvisited[len(unvisited)-1]
+		unvisited = unvisited[:len(unvisited)-1]
+
+		// Print the stack trace if this is one.
+		if _, ok := cur.(types.CollapsibleError); ok {
+			fmt.Fprintf(w, "\n%+v", cur)
+		}
+
+		switch cur := cur.(type) {
+		case interface{ Unwrap() error }:
+			if err := cur.Unwrap(); err != nil {
+				unvisited = append(unvisited, err)
+			}
+		case interface{ Unwrap() []error }:
+			errs := cur.Unwrap()
+			if len(errs) > 0 {
+				// Append in the proper order just for
+				// memory efficiency and then reverse the
+				// contents since we want to pop the first
+				// error first.
+				unvisited = append(unvisited, errs...)
+				for i, j := len(unvisited)-len(errs), len(unvisited)-1; i < j; i, j = i+1, j-1 {
+					unvisited[i], unvisited[j] = unvisited[j], unvisited[i]
+				}
+			}
+		}
+	}
 }

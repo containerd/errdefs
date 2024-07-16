@@ -17,7 +17,6 @@
 package stack
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -56,7 +55,6 @@ func TestCollapsed(t *testing.T) {
 	expected := "some error"
 	checkError(Join(errors.New(expected)), expected)
 	checkError(Join(errors.New(expected), ErrStack()), expected)
-	checkError(WithStack(context.Background(), errors.New(expected)), expected)
 }
 
 func TestHelpers(t *testing.T) {
@@ -90,9 +88,8 @@ func TestHelpers(t *testing.T) {
 
 func testHelper(msg string, withHelper bool) error {
 	if withHelper {
-		return WithStack(WithHelper(context.Background()), errors.New(msg))
+		return Join(errors.New(msg), Callers(2))
 	} else {
-		return WithStack(context.Background(), errors.New(msg))
+		return Join(errors.New(msg), ErrStack())
 	}
-
 }

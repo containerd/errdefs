@@ -17,24 +17,20 @@
 package stack
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"os"
-	"path"
 	"runtime"
 	"strings"
 	"sync/atomic"
 	"unsafe"
 
 	"github.com/containerd/typeurl/v2"
-
-	"github.com/containerd/errdefs/internal/types"
 )
 
 func init() {
-	typeurl.Register((*stack)(nil), "github.com/containerd/errdefs", "stack+json")
+	typeurl.Register((*Trace)(nil), "github.com/containerd/errdefs", "stack+json")
 }
 
 var (
@@ -45,15 +41,18 @@ var (
 	Revision string = "dirty"
 )
 
-type stack struct {
-	decoded *Trace
+func Callers(skip int) *Trace {
+	return callers(skip + 2)
+}
+
+type Trace struct {
+	decoded *trace
 
 	callers []uintptr
 	helpers []uintptr
 }
 
-// Trace is a stack trace along with process information about the source
-type Trace struct {
+type trace struct {
 	Version  string   `json:"version,omitempty"`
 	Revision string   `json:"revision,omitempty"`
 	Cmdline  []string `json:"cmdline,omitempty"`
@@ -68,20 +67,8 @@ type Frame struct {
 	Line int32  `json:"Line,omitempty"`
 }
 
-func (f Frame) Format(s fmt.State, verb rune) {
-	switch verb {
-	case 'v':
-		switch {
-		case s.Flag('+'):
-			fmt.Fprintf(s, "%s\n\t%s:%d\n", f.Name, f.File, f.Line)
-		default:
-			fmt.Fprint(s, f.Name)
-		}
-	case 's':
-		fmt.Fprint(s, path.Base(f.Name))
-	case 'q':
-		fmt.Fprintf(s, "%q", path.Base(f.Name))
-	}
+func (f Frame) Print(w io.Writer) {
+	fmt.Fprintf(w, "%s\n\t%s:%d\n", f.Name, f.File, f.Line)
 }
 
 // callers returns the current stack, skipping over the number of frames mentioned
@@ -90,18 +77,18 @@ func (f Frame) Format(s fmt.State, verb rune) {
 //	frame[0] runtime.Callers
 //	frame[1] <this function> github.com/containerd/errdefs/stack.callers
 //	frame[2] <caller> (Use skip=2 to have this be first frame)
-func callers(skip int) *stack {
+func callers(skip int) *Trace {
 	const depth = 32
 	var pcs [depth]uintptr
 	n := runtime.Callers(skip, pcs[:])
-	return &stack{
+	return &Trace{
 		callers: pcs[0:n],
 	}
 }
 
-func (s *stack) getDecoded() *Trace {
+func (s *Trace) getDecoded() *trace {
 	if s.decoded == nil {
-		var unsafeDecoded = (*unsafe.Pointer)(unsafe.Pointer(&s.decoded))
+		unsafeDecoded := (*unsafe.Pointer)(unsafe.Pointer(&s.decoded))
 
 		var helpers map[string]struct{}
 		if len(s.helpers) > 0 {
@@ -134,7 +121,7 @@ func (s *stack) getDecoded() *Trace {
 			}
 		}
 
-		t := Trace{
+		t := trace{
 			Version:  Version,
 			Revision: Revision,
 			Cmdline:  os.Args,
@@ -148,16 +135,21 @@ func (s *stack) getDecoded() *Trace {
 	return s.decoded
 }
 
-func (s *stack) Error() string {
-	return fmt.Sprintf("%+v", s.getDecoded())
+func (s *Trace) Print(w io.Writer) {
+	t := s.getDecoded()
+	fmt.Fprintf(w, "%d %s %s\n", t.Pid, t.Version, strings.Join(t.Cmdline, " "))
+	for _, f := range t.Frames {
+		f.Print(w)
+	}
+	fmt.Fprintln(w)
 }
 
-func (s *stack) MarshalJSON() ([]byte, error) {
+func (s *Trace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.getDecoded())
 }
 
-func (s *stack) UnmarshalJSON(b []byte) error {
-	var unsafeDecoded = (*unsafe.Pointer)(unsafe.Pointer(&s.decoded))
+func (s *Trace) UnmarshalJSON(b []byte) error {
+	unsafeDecoded := (*unsafe.Pointer)(unsafe.Pointer(&s.decoded))
 	var t Trace
 
 	if err := json.Unmarshal(b, &t); err != nil {
@@ -167,130 +159,4 @@ func (s *stack) UnmarshalJSON(b []byte) error {
 	atomic.StorePointer(unsafeDecoded, unsafe.Pointer(&t))
 
 	return nil
-}
-
-func (s *stack) Format(st fmt.State, verb rune) {
-	switch verb {
-	case 'v':
-		if st.Flag('+') {
-			t := s.getDecoded()
-			fmt.Fprintf(st, "%d %s %s\n", t.Pid, t.Version, strings.Join(t.Cmdline, " "))
-			for _, f := range t.Frames {
-				f.Format(st, verb)
-			}
-			fmt.Fprintln(st)
-			return
-		}
-	}
-}
-
-func (s *stack) StackTrace() Trace {
-	return *s.getDecoded()
-}
-
-func (s *stack) CollapseError() {}
-
-// ErrStack returns a new error for the callers stack,
-// this can be wrapped or joined into an existing error.
-// NOTE: When joined with errors.Join, the stack
-// will show up in the error string output.
-// Use with `stack.Join` to force addition of the
-// error stack.
-func ErrStack() error {
-	return callers(3)
-}
-
-// Join adds a stack if there is no stack included to the errors
-// and returns a joined error with the stack hidden from the error
-// output. The stack error shows up when Unwrapped or formatted
-// with `%+v`.
-func Join(errs ...error) error {
-	return joinErrors(nil, errs)
-}
-
-// WithStack will check if the error already has a stack otherwise
-// return a new error with the error joined with a stack error
-// Any helpers will be skipped.
-func WithStack(ctx context.Context, errs ...error) error {
-	return joinErrors(ctx.Value(helperKey{}), errs)
-}
-
-func joinErrors(helperVal any, errs []error) error {
-	var filtered []error
-	var collapsible []error
-	var hasStack bool
-	for _, err := range errs {
-		if err != nil {
-			if !hasStack && hasLocalStackTrace(err) {
-				hasStack = true
-			}
-			if _, ok := err.(types.CollapsibleError); ok {
-				collapsible = append(collapsible, err)
-			} else {
-				filtered = append(filtered, err)
-			}
-
-		}
-	}
-	if len(filtered) == 0 {
-		return nil
-	}
-	if !hasStack {
-		s := callers(4)
-		if helpers, ok := helperVal.([]uintptr); ok {
-			s.helpers = helpers
-		}
-		collapsible = append(collapsible, s)
-	}
-	var err error
-	if len(filtered) > 1 {
-		err = errors.Join(filtered...)
-	} else {
-		err = filtered[0]
-	}
-	if len(collapsible) == 0 {
-		return err
-	}
-
-	return types.CollapsedError(err, collapsible...)
-}
-
-func hasLocalStackTrace(err error) bool {
-	switch e := err.(type) {
-	case *stack:
-		return true
-	case interface{ Unwrap() error }:
-		if hasLocalStackTrace(e.Unwrap()) {
-			return true
-		}
-	case interface{ Unwrap() []error }:
-		for _, ue := range e.Unwrap() {
-			if hasLocalStackTrace(ue) {
-				return true
-			}
-		}
-	}
-
-	// TODO: Consider if pkg/errors compatibility is needed
-	// NOTE: This was implemented before the standard error package
-	// so it may unwrap and have this interface.
-	//if _, ok := err.(interface{ StackTrace() pkgerrors.StackTrace }); ok {
-	//	return true
-	//}
-
-	return false
-}
-
-type helperKey struct{}
-
-// WithHelper marks the context as from a helper function
-// This will add an additional skip to the error stack trace
-func WithHelper(ctx context.Context) context.Context {
-	helpers, _ := ctx.Value(helperKey{}).([]uintptr)
-	var pcs [1]uintptr
-	n := runtime.Callers(2, pcs[:])
-	if n == 1 {
-		ctx = context.WithValue(ctx, helperKey{}, append(helpers, pcs[0]))
-	}
-	return ctx
 }

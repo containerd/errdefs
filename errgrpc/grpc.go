@@ -23,12 +23,17 @@ package errgrpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/containerd/typeurl/v2"
+	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/containerd/errdefs"
 	"github.com/containerd/errdefs/internal/cause"
@@ -43,51 +48,104 @@ import (
 // If the error is unmapped, the original error will be returned to be handled
 // by the regular grpc error handling stack.
 func ToGRPC(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	if isGRPCError(err) {
-		// error has already been mapped to grpc
+	if err == nil || isGRPCError(err) {
 		return err
 	}
 
-	switch {
-	case errdefs.IsInvalidArgument(err):
-		return status.Error(codes.InvalidArgument, err.Error())
-	case errdefs.IsNotFound(err):
-		return status.Error(codes.NotFound, err.Error())
-	case errdefs.IsAlreadyExists(err):
-		return status.Error(codes.AlreadyExists, err.Error())
-	case errdefs.IsFailedPrecondition(err) || errdefs.IsConflict(err) || errdefs.IsNotModified(err):
-		return status.Error(codes.FailedPrecondition, err.Error())
-	case errdefs.IsUnavailable(err):
-		return status.Error(codes.Unavailable, err.Error())
-	case errdefs.IsNotImplemented(err):
-		return status.Error(codes.Unimplemented, err.Error())
-	case errdefs.IsCanceled(err):
-		return status.Error(codes.Canceled, err.Error())
-	case errdefs.IsDeadlineExceeded(err):
-		return status.Error(codes.DeadlineExceeded, err.Error())
-	case errdefs.IsUnauthorized(err):
-		return status.Error(codes.Unauthenticated, err.Error())
-	case errdefs.IsPermissionDenied(err):
-		return status.Error(codes.PermissionDenied, err.Error())
-	case errdefs.IsInternal(err):
-		return status.Error(codes.Internal, err.Error())
-	case errdefs.IsDataLoss(err):
-		return status.Error(codes.DataLoss, err.Error())
-	case errdefs.IsAborted(err):
-		return status.Error(codes.Aborted, err.Error())
-	case errdefs.IsOutOfRange(err):
-		return status.Error(codes.OutOfRange, err.Error())
-	case errdefs.IsResourceExhausted(err):
-		return status.Error(codes.ResourceExhausted, err.Error())
-	case errdefs.IsUnknown(err):
-		return status.Error(codes.Unknown, err.Error())
+	p := &spb.Status{
+		Code:    int32(errorCode(err)),
+		Message: err.Error(),
+	}
+	withDetails(p, err)
+	return status.FromProto(p).Err()
+}
+
+func withDetails(p *spb.Status, err error) {
+	any, _ := anypb.New(p)
+	if any == nil {
+		// If we fail to marshal the details, then use a generic
+		// error by setting this as the empty struct.
+		any, _ = anypb.New(&emptypb.Empty{})
 	}
 
-	return err
+	if any == nil {
+		// Extra protection just in case the above fails for
+		// some reason.
+		return
+	}
+
+	// First detail is a serialization of the current error.
+	p.Details = append(p.Details, &anypb.Any{
+		TypeUrl: any.GetTypeUrl(),
+		Value:   any.GetValue(),
+	})
+
+	// Any remaining details are wrapped errors. We check
+	// both versions of Unwrap to get this correct.
+	var errs []error
+	switch err := err.(type) {
+	case interface{ Unwrap() error }:
+		if unwrapped := err.Unwrap(); unwrapped != nil {
+			errs = []error{unwrapped}
+		}
+	case interface{ Unwrap() []error }:
+		errs = err.Unwrap()
+	}
+
+	for _, err := range errs {
+		detail := &spb.Status{
+			// Code doesn't matter. We don't use it beyond the top level.
+			// Set to unknown just in case it leaks somehow.
+			Code:    int32(codes.Unknown),
+			Message: err.Error(),
+		}
+		withDetails(detail, err)
+
+		if any, err := anypb.New(detail); err == nil {
+			p.Details = append(p.Details, any)
+		}
+	}
+}
+
+func errorCode(err error) codes.Code {
+	switch err := errdefs.Resolve(err); {
+	case errdefs.IsInvalidArgument(err):
+		return codes.InvalidArgument
+	case errdefs.IsNotFound(err):
+		return codes.NotFound
+	case errdefs.IsAlreadyExists(err):
+		return codes.AlreadyExists
+	case errdefs.IsFailedPrecondition(err):
+		fallthrough
+	case errdefs.IsConflict(err):
+		fallthrough
+	case errdefs.IsNotModified(err):
+		return codes.FailedPrecondition
+	case errdefs.IsUnavailable(err):
+		return codes.Unavailable
+	case errdefs.IsNotImplemented(err):
+		return codes.Unimplemented
+	case errdefs.IsCanceled(err):
+		return codes.Canceled
+	case errdefs.IsDeadlineExceeded(err):
+		return codes.DeadlineExceeded
+	case errdefs.IsUnauthorized(err):
+		return codes.Unauthenticated
+	case errdefs.IsPermissionDenied(err):
+		return codes.PermissionDenied
+	case errdefs.IsInternal(err):
+		return codes.Internal
+	case errdefs.IsDataLoss(err):
+		return codes.DataLoss
+	case errdefs.IsAborted(err):
+		return codes.Aborted
+	case errdefs.IsOutOfRange(err):
+		return codes.OutOfRange
+	case errdefs.IsResourceExhausted(err):
+		return codes.ResourceExhausted
+	default:
+		return codes.Unknown
+	}
 }
 
 // ToGRPCf maps the error to grpc error codes, assembling the formatting string
@@ -96,6 +154,122 @@ func ToGRPC(err error) error {
 // This is equivalent to grpc.ToGRPC(fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err))
 func ToGRPCf(err error, format string, args ...interface{}) error {
 	return ToGRPC(fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err))
+}
+
+func FromGRPC(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		return err
+	}
+
+	p := st.Proto()
+	return fromGRPCProto(p)
+}
+
+func fromGRPCProto(p *spb.Status) error {
+	err := errors.New(p.Message)
+	if len(p.Details) == 0 {
+		return err
+	}
+
+	// First detail has the serialization.
+	detail := p.Details[0]
+	v, terr := typeurl.UnmarshalAny(detail)
+	if terr == nil {
+		if verr, ok := v.(error); ok {
+			// Successfully unmarshaled the type as an error.
+			// Use this instead.
+			err = verr
+		}
+	}
+
+	// If there is more than one detail, attempt to unmarshal
+	// each one of them.
+	if len(p.Details) > 1 {
+		wrapped := make([]error, 0, len(p.Details)-1)
+		for _, detail := range p.Details[1:] {
+			p, derr := typeurl.UnmarshalAny(detail)
+			if derr != nil {
+				continue
+			}
+
+			switch p := p.(type) {
+			case *spb.Status:
+				wrapped = append(wrapped, fromGRPCProto(p))
+			}
+		}
+		err = wrap(err, wrapped)
+	}
+	return err
+}
+
+// wrap will wrap errs within the parent error.
+// If the parent supports errorWrapper, it will use that.
+// Otherwise, it will generate the necessary structs
+// to fit the structure.
+func wrap(parent error, errs []error) error {
+	// If the error supports WrapError, then use that
+	// to modify the error to include the wrapped error.
+	// Otherwise, we create a proxy type so Unwrap works.
+	for len(errs) > 0 {
+		// If errorWrapper is implemented, invoke it
+		// and set the new error to the returned
+		// value. Then return to the start of the loop.
+		if err, ok := parent.(errorWrapper); ok {
+			parent = err.WrapError(errs[0])
+			errs = errs[1:]
+			continue
+		}
+
+		// Create a default wrapper that conforms to
+		// the errors API. If there is only one wrapped
+		// error, use a version that supports Unwrap() error
+		// since there's more compatibility with that interface.
+		if len(errs) == 1 {
+			return &wrapError{
+				error: parent,
+				err:   errs[0],
+			}
+		}
+		return &wrapErrors{
+			error: parent,
+		}
+	}
+	return parent
+}
+
+type errorWrapper interface {
+	// WrapError is used to include a wrapped error in the
+	// parent error during unmarshaling. If an error doesn't
+	// need direct knowledge of its wrapped error, then it
+	// shouldn't implement this method and should instead
+	// utilize the generic structure created during unmarshaling.
+	//
+	// This will return the error. It is ok if the error modifies
+	// and returns itself.
+	WrapError(err error) error
+}
+
+type wrapError struct {
+	error
+	err error
+}
+
+func (e *wrapError) Unwrap() error {
+	return e.err
+}
+
+type wrapErrors struct {
+	error
+	errs []error
+}
+
+func (e *wrapErrors) Unwrap() []error {
+	return e.errs
 }
 
 // ToNative returns the underlying error from a grpc service based on the grpc error code

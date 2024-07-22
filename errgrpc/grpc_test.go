@@ -172,3 +172,26 @@ func TestGRPCRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestGRPC(t *testing.T) {
+	err := fmt.Errorf("my error: %w", errdefs.ErrAborted)
+	gerr := ToGRPC(err)
+	st, _ := status.FromError(gerr)
+	p := st.Proto()
+	fmt.Printf("%d\n", len(p.Details))
+	ferr := FromGRPC(gerr)
+
+	for unvisited := []error{ferr}; len(unvisited) > 0; {
+		cur := unvisited[0]
+		unvisited = unvisited[1:]
+		fmt.Printf("%s %T\n", cur.Error(), cur)
+		switch cur := cur.(type) {
+		case interface{ Unwrap() error }:
+			if v := cur.Unwrap(); v != nil {
+				unvisited = append(unvisited, v)
+			}
+		case interface{ Unwrap() []error }:
+			unvisited = append(unvisited, cur.Unwrap()...)
+		}
+	}
+}

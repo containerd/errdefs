@@ -45,29 +45,13 @@ func Resolve(err error) error {
 func firstError(err error) error {
 	for {
 		switch err {
-		case ErrUnknown,
-			ErrInvalidArgument,
-			ErrNotFound,
-			ErrAlreadyExists,
-			ErrPermissionDenied,
-			ErrResourceExhausted,
-			ErrFailedPrecondition,
-			ErrConflict,
-			ErrNotModified,
-			ErrAborted,
-			ErrOutOfRange,
-			ErrNotImplemented,
-			ErrInternal,
-			ErrUnavailable,
-			ErrDataLoss,
-			ErrUnauthenticated,
-			context.DeadlineExceeded,
-			context.Canceled:
+		case context.Canceled, context.DeadlineExceeded:
 			return err
 		}
+
 		switch e := err.(type) {
-		case customMessage:
-			err = e.err
+		case Error:
+			return e
 		case unknown:
 			return ErrUnknown
 		case invalidParameter:

@@ -26,7 +26,7 @@ import (
 func TestInvalidArgument(t *testing.T) {
 	for _, match := range []error{
 		ErrInvalidArgument,
-		&errInvalidArgument{},
+		customMessage{err: ErrInvalidArgument},
 		&customInvalidArgument{},
 		&wrappedInvalidArgument{errors.New("invalid parameter")},
 	} {
@@ -55,7 +55,7 @@ func TestErrorEquivalence(t *testing.T) {
 		t.Fatal("errors.Is should not return true")
 	}
 
-	var e3 error = errAborted{}
+	var e3 error = ErrAborted
 	if e1 != e3 {
 		t.Fatal("new instance should be equivalent")
 	}
@@ -65,12 +65,12 @@ func TestErrorEquivalence(t *testing.T) {
 	if !errors.Is(e3, e1) {
 		t.Fatal("errors.Is should be true")
 	}
-	var aborted errAborted
+	var aborted Error
 	if !errors.As(e1, &aborted) {
 		t.Fatal("errors.As should be true")
 	}
 
-	var e4 = ErrAborted.WithMessage("custom message")
+	e4 := ErrAborted.WithMessage("custom message")
 	if e1 == e4 {
 		t.Fatal("should not equal the same error")
 	}
@@ -94,13 +94,14 @@ func TestErrorEquivalence(t *testing.T) {
 	if custom.msg != "custom message" {
 		t.Fatalf("unexpected custom message: %q", custom.msg)
 	}
-	if custom.err != e1 {
-		t.Fatalf("unexpected custom message error: %v", custom.err)
+	if !errors.Is(custom, e1) {
+		t.Fatal("errors.Is should be true")
 	}
 }
 
 func TestWithMessage(t *testing.T) {
-	testErrors := []error{ErrUnknown,
+	testErrors := []error{
+		ErrUnknown,
 		ErrInvalidArgument,
 		ErrNotFound,
 		ErrAlreadyExists,
@@ -138,7 +139,7 @@ func TestWithMessage(t *testing.T) {
 				t.Fatal("errors.Is should be false, e1 is not a custom message")
 			}
 
-			var raw = reflect.New(reflect.TypeOf(e1)).Interface()
+			raw := reflect.New(reflect.TypeOf(e1)).Interface()
 			if !errors.As(e2, raw) {
 				t.Fatal("errors.As should be true")
 			}
@@ -150,10 +151,9 @@ func TestWithMessage(t *testing.T) {
 			if custom.msg != "custom message" {
 				t.Fatalf("unexpected custom message: %q", custom.msg)
 			}
-			if custom.err != e1 {
-				t.Fatalf("unexpected custom message error: %v", custom.err)
+			if !errors.Is(custom, e1) {
+				t.Fatal("errors.Is should be true")
 			}
-
 		})
 	}
 }

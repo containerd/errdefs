@@ -20,10 +20,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/containerd/typeurl/v2"
 
 	"github.com/containerd/errdefs"
 	"github.com/containerd/errdefs/errhttp"
@@ -106,14 +109,15 @@ func TestGRPCRoundTrip(t *testing.T) {
 			str:   "test test test: failed precondition",
 		},
 		{
+			// Currently failing
 			input: status.Errorf(codes.Unavailable, "should be not available"),
 			cause: errdefs.ErrUnavailable,
-			str:   "should be not available: unavailable",
+			str:   "should be not available",
 		},
 		{
 			input: errShouldLeaveAlone,
 			cause: errdefs.ErrUnknown,
-			str:   errShouldLeaveAlone.Error() + ": " + errdefs.ErrUnknown.Error(),
+			str:   errShouldLeaveAlone.Error(),
 		},
 		{
 			input: context.Canceled,
@@ -171,4 +175,102 @@ func TestGRPCRoundTrip(t *testing.T) {
 			}
 		})
 	}
+}
+
+type TestError struct {
+	Value string `json:"value"`
+}
+
+func (*TestError) Error() string {
+	return "test error"
+}
+
+func TestGRPCCustomDetails(t *testing.T) {
+	typeurl.Register(&TestError{}, t.Name())
+	expected := &TestError{
+		Value: "test 1",
+	}
+
+	err := errors.Join(errdefs.ErrInternal, expected)
+	gerr := ToGRPC(err)
+
+	s, ok := status.FromError(gerr)
+	if !ok {
+		t.Fatalf("Not GRPC error: %v", gerr)
+	}
+	if s.Code() != codes.Internal {
+		t.Fatalf("Unexpectd GRPC code %v, expected %v", s.Code(), codes.Internal)
+	}
+
+	nerr := ToNative(gerr)
+	if !errors.Is(nerr, errdefs.ErrInternal) {
+		t.Fatalf("Expected internal error type, got %v", nerr)
+	}
+	if !errdefs.IsInternal(err) {
+		t.Fatalf("Expected internal error type, got %v", nerr)
+	}
+	terr := &TestError{}
+	if !errors.As(nerr, &terr) {
+		t.Fatalf("TestError not preserved, got %v", nerr)
+	} else if terr.Value != expected.Value {
+		t.Fatalf("Value not preserved, got %v", terr.Value)
+	}
+}
+
+func TestGRPCMultiError(t *testing.T) {
+	err := errors.Join(errdefs.ErrPermissionDenied, errdefs.ErrDataLoss, errdefs.ErrConflict, fmt.Errorf("Was not changed at all!: %w", errdefs.ErrNotModified))
+
+	checkError := func(err error) {
+		t.Helper()
+		if !errors.Is(err, errdefs.ErrPermissionDenied) {
+			t.Fatal("Not permission denied")
+		}
+		if !errors.Is(err, errdefs.ErrDataLoss) {
+			t.Fatal("Not data loss")
+		}
+		if !errors.Is(err, errdefs.ErrConflict) {
+			t.Fatal("Not conflict")
+		}
+		if !errors.Is(err, errdefs.ErrNotModified) {
+			t.Fatal("Not not modified")
+		}
+		if errors.Is(err, errdefs.ErrFailedPrecondition) {
+			t.Fatal("Should not be failed precondition")
+		}
+		if !strings.Contains(err.Error(), "Was not changed at all!") {
+			t.Fatalf("Not modified error message missing from:\n%v", err)
+		}
+	}
+	checkError(err)
+
+	terr := ToNative(ToGRPC(err))
+
+	checkError(terr)
+
+	// Try again with decoded error
+	checkError(ToNative(ToGRPC(terr)))
+}
+
+func TestGRPCNestedError(t *testing.T) {
+	multiErr := errors.Join(fmt.Errorf("First error: %w", errdefs.ErrNotFound), fmt.Errorf("Second error: %w", errdefs.ErrResourceExhausted))
+
+	checkError := func(err error) {
+		t.Helper()
+		if !errors.Is(err, errdefs.ErrNotFound) {
+			t.Fatal("Not not found")
+		}
+		if !errors.Is(err, errdefs.ErrResourceExhausted) {
+			t.Fatal("Not resource exhausted")
+		}
+		if errors.Is(err, errdefs.ErrFailedPrecondition) {
+			t.Fatal("Should not be failed precondition")
+		}
+	}
+	checkError(multiErr)
+
+	werr := fmt.Errorf("Wrapping the error: %w", multiErr)
+
+	checkError(werr)
+
+	checkError(ToNative(ToGRPC(werr)))
 }

@@ -74,17 +74,22 @@ func firstError(err error) error {
 			return ErrInvalidArgument
 		case notFound:
 			return ErrNotFound
-		// Skip ErrAlreadyExists, no interface defined
+		case alreadyExists:
+			return ErrAlreadyExists
 		case forbidden:
 			return ErrPermissionDenied
-		// Skip ErrResourceExhasuted, no interface defined
-		// Skip ErrFailedPrecondition, no interface defined
+		case resourceExhausted:
+			return ErrResourceExhausted
+		case failedPrecondition:
+			return ErrFailedPrecondition
 		case conflict:
 			return ErrConflict
 		case notModified:
 			return ErrNotModified
-		// Skip ErrAborted, no interface defined
-		// Skip ErrOutOfRange, no interface defined
+		case aborted:
+			return ErrAborted
+		case errOutOfRange:
+			return ErrOutOfRange
 		case notImplemented:
 			return ErrNotImplemented
 		case system:

@@ -441,3 +441,45 @@ func (c customMessage) As(target any) bool {
 func (c customMessage) Error() string {
 	return c.msg
 }
+
+// Attach will join the extra errors to the base error where
+// only the base error is part of the message but all errors
+// are wrapped at the same level.
+func Attach(base error, extra ...error) error {
+	if len(extra) == 0 {
+		return base
+	}
+
+	return &attachedError{
+		error:   base,
+		wrapped: append([]error{base}, extra...),
+	}
+}
+
+// Mask will join the extra errors where the base error is
+// part of the message but the extra errors are joined earlier
+// in the chain and would mask the base error when used with
+// errors.Is or errors.As.
+func Mask(base error, extra ...error) error {
+	if len(extra) == 0 {
+		return base
+	}
+
+	return &attachedError{
+		error:   base,
+		wrapped: append(extra, base),
+	}
+}
+
+// attachedError is used to attach errors to a base
+// error. The attached errors will be hidden from view when
+// being printed but will show up when errors.Is or errors.As
+// are used.
+type attachedError struct {
+	error
+	wrapped []error
+}
+
+func (e *attachedError) Unwrap() []error {
+	return e.wrapped
+}

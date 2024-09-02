@@ -139,19 +139,27 @@ type errAlreadyExists struct{}
 
 func (errAlreadyExists) Error() string { return "already exists" }
 
+func (errAlreadyExists) AlreadyExists() {}
+
 func (e errAlreadyExists) WithMessage(msg string) error {
 	return customMessage{e, msg}
+}
+
+type alreadyExists interface {
+	AlreadyExists()
 }
 
 // IsAlreadyExists returns true if the error is due to an already existing
 // metadata item
 func IsAlreadyExists(err error) bool {
-	return errors.Is(err, ErrAlreadyExists)
+	return errors.Is(err, ErrAlreadyExists) || isInterface[alreadyExists](err)
 }
 
 type errPermissionDenied struct{}
 
 func (errPermissionDenied) Error() string { return "permission denied" }
+
+func (errPermissionDenied) Forbidden() {}
 
 func (e errPermissionDenied) WithMessage(msg string) error {
 	return customMessage{e, msg}
@@ -172,28 +180,40 @@ type errResourceExhausted struct{}
 
 func (errResourceExhausted) Error() string { return "resource exhausted" }
 
+func (errResourceExhausted) ResourceExhausted() {}
+
 func (e errResourceExhausted) WithMessage(msg string) error {
 	return customMessage{e, msg}
+}
+
+type resourceExhausted interface {
+	ResourceExhausted()
 }
 
 // IsResourceExhausted returns true if the error is due to
 // a lack of resources or too many attempts.
 func IsResourceExhausted(err error) bool {
-	return errors.Is(err, errResourceExhausted{})
+	return errors.Is(err, errResourceExhausted{}) || isInterface[resourceExhausted](err)
 }
 
 type errFailedPrecondition struct{}
 
 func (e errFailedPrecondition) Error() string { return "failed precondition" }
 
+func (errFailedPrecondition) FailedPrecondition() {}
+
 func (e errFailedPrecondition) WithMessage(msg string) error {
 	return customMessage{e, msg}
+}
+
+type failedPrecondition interface {
+	FailedPrecondition()
 }
 
 // IsFailedPrecondition returns true if an operation could not proceed due to
 // the lack of a particular condition
 func IsFailedPrecondition(err error) bool {
-	return errors.Is(err, errFailedPrecondition{})
+	return errors.Is(err, errFailedPrecondition{}) || isInterface[failedPrecondition](err)
 }
 
 type errConflict struct{}
@@ -242,27 +262,39 @@ type errAborted struct{}
 
 func (errAborted) Error() string { return "aborted" }
 
+func (errAborted) Aborted() {}
+
 func (e errAborted) WithMessage(msg string) error {
 	return customMessage{e, msg}
 }
 
+type aborted interface {
+	Aborted()
+}
+
 // IsAborted returns true if an operation was aborted.
 func IsAborted(err error) bool {
-	return errors.Is(err, errAborted{})
+	return errors.Is(err, errAborted{}) || isInterface[aborted](err)
 }
 
 type errOutOfRange struct{}
 
 func (errOutOfRange) Error() string { return "out of range" }
 
+func (errOutOfRange) OutOfRange() {}
+
 func (e errOutOfRange) WithMessage(msg string) error {
 	return customMessage{e, msg}
+}
+
+type outOfRange interface {
+	OutOfRange()
 }
 
 // IsOutOfRange returns true if an operation could not proceed due
 // to data being out of the expected range.
 func IsOutOfRange(err error) bool {
-	return errors.Is(err, errOutOfRange{})
+	return errors.Is(err, errOutOfRange{}) || isInterface[outOfRange](err)
 }
 
 type errNotImplemented struct{}

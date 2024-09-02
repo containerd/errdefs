@@ -19,6 +19,7 @@ package errdefs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -154,6 +155,39 @@ func TestWithMessage(t *testing.T) {
 				t.Fatalf("unexpected custom message error: %v", custom.err)
 			}
 
+		})
+	}
+}
+
+func TestInterfaceMatch(t *testing.T) {
+	testCases := []struct {
+		err   error
+		check func(error) bool
+	}{
+		{ErrUnknown, isInterface[unknown]},
+		{ErrInvalidArgument, isInterface[invalidParameter]},
+		{ErrNotFound, isInterface[notFound]},
+		{ErrAlreadyExists, isInterface[alreadyExists]},
+		{ErrPermissionDenied, isInterface[forbidden]},
+		{ErrResourceExhausted, isInterface[resourceExhausted]},
+		{ErrFailedPrecondition, isInterface[failedPrecondition]},
+		{ErrConflict, isInterface[conflict]},
+		{ErrNotModified, isInterface[notModified]},
+		{ErrAborted, isInterface[aborted]},
+		{ErrOutOfRange, isInterface[outOfRange]},
+		{ErrNotImplemented, isInterface[notImplemented]},
+		{ErrInternal, isInterface[system]},
+		{ErrUnavailable, isInterface[unavailable]},
+		{ErrDataLoss, isInterface[dataLoss]},
+		{ErrUnauthenticated, isInterface[unauthorized]},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(fmt.Sprintf("%T", tc.err), func(t *testing.T) {
+			if !tc.check(tc.err) {
+				t.Fatal("Error does not match interface")
+			}
 		})
 	}
 }

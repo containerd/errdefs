@@ -200,22 +200,28 @@ func ErrStack() error {
 	return callers(3)
 }
 
+// Errorf formats an error using fmt.Errorf and joins it with
+// a stack if the error does not already have one.
+func Errorf(format string, a ...any) error {
+	return joinErrors(nil, fmt.Errorf(format, a...))
+}
+
 // Join adds a stack if there is no stack included to the errors
 // and returns a joined error with the stack hidden from the error
 // output. The stack error shows up when Unwrapped or formatted
 // with `%+v`.
 func Join(errs ...error) error {
-	return joinErrors(nil, errs)
+	return joinErrors(nil, errs...)
 }
 
 // WithStack will check if the error already has a stack otherwise
 // return a new error with the error joined with a stack error
 // Any helpers will be skipped.
 func WithStack(ctx context.Context, errs ...error) error {
-	return joinErrors(ctx.Value(helperKey{}), errs)
+	return joinErrors(ctx.Value(helperKey{}), errs...)
 }
 
-func joinErrors(helperVal any, errs []error) error {
+func joinErrors(helperVal any, errs ...error) error {
 	var filtered []error
 	var collapsible []error
 	var hasStack bool

@@ -26,7 +26,7 @@ import (
 	"net/http"
 
 	"github.com/containerd/errdefs"
-	"github.com/containerd/errdefs/internal/cause"
+	"github.com/containerd/errdefs/pkg/internal/cause"
 )
 
 // ToHTTP returns the best status code for the given error

@@ -29,8 +29,8 @@ import (
 	"github.com/containerd/typeurl/v2"
 
 	"github.com/containerd/errdefs"
-	"github.com/containerd/errdefs/errhttp"
-	"github.com/containerd/errdefs/internal/cause"
+	"github.com/containerd/errdefs/pkg/errhttp"
+	"github.com/containerd/errdefs/pkg/internal/cause"
 )
 
 func TestGRPCNilInput(t *testing.T) {

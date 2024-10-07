@@ -39,8 +39,8 @@ import (
 	"github.com/containerd/typeurl/v2"
 
 	"github.com/containerd/errdefs"
-	"github.com/containerd/errdefs/internal/cause"
-	"github.com/containerd/errdefs/internal/types"
+	"github.com/containerd/errdefs/pkg/internal/cause"
+	"github.com/containerd/errdefs/pkg/internal/types"
 )
 
 // ToGRPC will attempt to map the error into a grpc error, from the error types

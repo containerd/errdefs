@@ -30,7 +30,7 @@ import (
 
 	"github.com/containerd/typeurl/v2"
 
-	"github.com/containerd/errdefs/internal/types"
+	"github.com/containerd/errdefs/pkg/internal/types"
 )
 
 func init() {

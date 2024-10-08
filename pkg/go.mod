@@ -3,7 +3,7 @@ module github.com/containerd/errdefs/pkg
 go 1.22
 
 require (
-	github.com/containerd/errdefs v0.2.0
+	github.com/containerd/errdefs v0.3.0
 	github.com/containerd/typeurl/v2 v2.2.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1
 	google.golang.org/grpc v1.67.0

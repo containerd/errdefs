@@ -403,8 +403,6 @@ func isInterface[T any](err error) bool {
 		switch x := err.(type) {
 		case T:
 			return true
-		case customMessage:
-			err = x.err
 		case interface{ Unwrap() error }:
 			err = x.Unwrap()
 			if err == nil {
@@ -423,21 +421,14 @@ func isInterface[T any](err error) bool {
 	}
 }
 
-// customMessage is used to provide a defined error with a custom message.
-// The message is not wrapped but can be compared by the `Is(error) bool` interface.
+// customMessage is used to provide a custom message for a defined error.
+// The custom message is returned by Error(); the underlying error's
+// message is not included, but the error can still be matched with
+// errors.Is.
 type customMessage struct {
 	err error
 	msg string
 }
 
-func (c customMessage) Is(err error) bool {
-	return c.err == err
-}
-
-func (c customMessage) As(target any) bool {
-	return errors.As(c.err, target)
-}
-
-func (c customMessage) Error() string {
-	return c.msg
-}
+func (c customMessage) Error() string { return c.msg }
+func (c customMessage) Unwrap() error { return c.err }

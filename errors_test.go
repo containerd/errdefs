@@ -24,28 +24,6 @@ import (
 	"testing"
 )
 
-func TestInvalidArgument(t *testing.T) {
-	for _, match := range []error{
-		ErrInvalidArgument,
-		&errInvalidArgument{},
-		&customInvalidArgument{},
-		&wrappedInvalidArgument{errors.New("invalid parameter")},
-	} {
-		if !IsInvalidArgument(match) {
-			t.Errorf("error did not match invalid argument: %#v", match)
-		}
-	}
-	for _, nonMatch := range []error{
-		ErrUnknown,
-		context.Canceled,
-		errors.New("invalid argument"),
-	} {
-		if IsInvalidArgument(nonMatch) {
-			t.Errorf("error unexpectedly matched invalid argument: %#v", nonMatch)
-		}
-	}
-}
-
 func TestErrorEquivalence(t *testing.T) {
 	var e1 error = ErrAborted
 	var e2 error = ErrUnknown
@@ -192,14 +170,212 @@ func TestInterfaceMatch(t *testing.T) {
 	}
 }
 
-type customInvalidArgument struct{}
+// TestIsHelpers verifies that all IsXxx helpers:
+//
+//  1. Match the canonical errdefs sentinel (e.g., ErrNotFound).
+//  2. Work through standard %w wrapping.
+//  3. Recognize Moby-style interface-based errors (custom types implementing
+//     methods such as NotFound(), Unauthorized(), etc., without coupling to
+//     containerd/errdefs).
+//  4. Work through errors.Join (multi-error unwrapping).
+func TestIsHelpers(t *testing.T) {
+	errOther := errors.New("errdefs test: other error")
 
-func (*customInvalidArgument) Error() string {
-	return "my own invalid argument"
+	tests := []struct {
+		doc       string
+		is        func(error) bool
+		sentinel  error
+		customErr func() error
+	}{
+		{"IsCanceled", IsCanceled, context.Canceled, newCanceledErr},
+		{"IsDeadlineExceeded", IsDeadlineExceeded, context.DeadlineExceeded, newDeadlineExceededErr},
+
+		{"IsUnknown", IsUnknown, ErrUnknown, newUnknownErr},
+		{"IsInvalidArgument", IsInvalidArgument, ErrInvalidArgument, newInvalidArgumentErr},
+		{"IsNotFound", IsNotFound, ErrNotFound, newNotFoundErr},
+		{"IsAlreadyExists", IsAlreadyExists, ErrAlreadyExists, newAlreadyExistsErr},
+		{"IsPermissionDenied", IsPermissionDenied, ErrPermissionDenied, newPermissionDeniedErr},
+		{"IsResourceExhausted", IsResourceExhausted, ErrResourceExhausted, newResourceExhaustedErr},
+		{"IsFailedPrecondition", IsFailedPrecondition, ErrFailedPrecondition, newFailedPreconditionErr},
+		{"IsConflict", IsConflict, ErrConflict, newConflictErr},
+		{"IsNotModified", IsNotModified, ErrNotModified, newNotModifiedErr},
+		{"IsAborted", IsAborted, ErrAborted, newAbortedErr},
+		{"IsOutOfRange", IsOutOfRange, ErrOutOfRange, newOutOfRangeErr},
+		{"IsNotImplemented", IsNotImplemented, ErrNotImplemented, newNotImplementedErr},
+		{"IsInternal", IsInternal, ErrInternal, newInternalErr},
+		{"IsUnavailable", IsUnavailable, ErrUnavailable, newUnavailableErr},
+		{"IsDataLoss", IsDataLoss, ErrDataLoss, newDataLossErr},
+		{"IsUnauthorized", IsUnauthorized, ErrUnauthenticated, newUnauthorizedErr},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.doc, func(t *testing.T) {
+			customErr := tc.customErr()
+
+			if tc.is(nil) {
+				t.Error("expected false for nil")
+			}
+
+			// Sentinel
+			if !tc.is(tc.sentinel) {
+				t.Errorf("expected true for sentinel (%T)", tc.sentinel)
+			}
+			if !tc.is(fmt.Errorf("wrap: %w", tc.sentinel)) {
+				t.Errorf("expected true for wrapped sentinel (%T)", tc.sentinel)
+			}
+
+			// Moby-style interface-based implementation
+			if !tc.is(customErr) {
+				t.Errorf("expected true for custom err (%T)", customErr)
+			}
+			if !tc.is(fmt.Errorf("wrap: %w", customErr)) {
+				t.Errorf("expected true for wrapped custom err (%T)", customErr)
+			}
+			if !tc.is(errors.Join(errOther, customErr)) {
+				t.Errorf("expected true for joined custom err (%T)", customErr)
+			}
+
+			// WithMessage (only for errdefs sentinels that implement it)
+			if wm, ok := any(tc.sentinel).(interface{ WithMessage(string) error }); ok {
+				if !tc.is(wm.WithMessage("custom msg")) {
+					t.Errorf("expected true for WithMessage (%T)", tc.sentinel)
+				}
+			}
+
+			// Negative control
+			if tc.is(errOther) {
+				t.Errorf("expected false for unrelated error")
+			}
+			if tc.is(errors.New(tc.sentinel.Error())) {
+				t.Errorf("expected false for message-only match")
+			}
+		})
+	}
 }
 
+func newCanceledErr() error { return &customCanceled{} }
+
+type customCanceled struct{}
+
+func (*customCanceled) Error() string { return "custom canceled" }
+func (*customCanceled) Cancelled()    {}
+
+func newDeadlineExceededErr() error { return &customDeadlineExceeded{} }
+
+type customDeadlineExceeded struct{}
+
+func (*customDeadlineExceeded) Error() string     { return "custom deadline" }
+func (*customDeadlineExceeded) DeadlineExceeded() {}
+
+func newUnknownErr() error { return &customUnknown{} }
+
+type customUnknown struct{}
+
+func (*customUnknown) Error() string { return "custom unknown" }
+func (*customUnknown) Unknown()      {}
+
+func newInvalidArgumentErr() error { return &customInvalidArgument{} }
+
+type customInvalidArgument struct{}
+
+func (*customInvalidArgument) Error() string     { return "custom invalid argument" }
 func (*customInvalidArgument) InvalidParameter() {}
 
-type wrappedInvalidArgument struct{ error }
+func newNotFoundErr() error { return &customNotFound{} }
 
-func (*wrappedInvalidArgument) InvalidParameter() {}
+type customNotFound struct{}
+
+func (*customNotFound) Error() string { return "custom not found" }
+func (*customNotFound) NotFound()     {}
+
+func newAlreadyExistsErr() error { return &customAlreadyExists{} }
+
+type customAlreadyExists struct{}
+
+func (*customAlreadyExists) Error() string  { return "custom already exists" }
+func (*customAlreadyExists) AlreadyExists() {}
+
+func newPermissionDeniedErr() error { return &customPermissionDenied{} }
+
+type customPermissionDenied struct{}
+
+func (*customPermissionDenied) Error() string { return "custom permission denied" }
+func (*customPermissionDenied) Forbidden()    {}
+
+func newResourceExhaustedErr() error { return &customResourceExhausted{} }
+
+type customResourceExhausted struct{}
+
+func (*customResourceExhausted) Error() string      { return "custom resource exhausted" }
+func (*customResourceExhausted) ResourceExhausted() {}
+
+func newFailedPreconditionErr() error { return &customFailedPrecondition{} }
+
+type customFailedPrecondition struct{}
+
+func (*customFailedPrecondition) Error() string       { return "custom failed precondition" }
+func (*customFailedPrecondition) FailedPrecondition() {}
+
+func newConflictErr() error { return &customConflict{} }
+
+type customConflict struct{}
+
+func (*customConflict) Error() string { return "custom conflict" }
+func (*customConflict) Conflict()     {}
+
+func newNotModifiedErr() error { return &customNotModified{} }
+
+type customNotModified struct{}
+
+func (*customNotModified) Error() string { return "custom not modified" }
+func (*customNotModified) NotModified()  {}
+
+func newAbortedErr() error { return &customAborted{} }
+
+type customAborted struct{}
+
+func (*customAborted) Error() string { return "custom aborted" }
+func (*customAborted) Aborted()      {}
+
+func newOutOfRangeErr() error { return &customOutOfRange{} }
+
+type customOutOfRange struct{}
+
+func (*customOutOfRange) Error() string { return "custom out of range" }
+func (*customOutOfRange) OutOfRange()   {}
+
+func newNotImplementedErr() error { return &customNotImplemented{} }
+
+type customNotImplemented struct{}
+
+func (*customNotImplemented) Error() string   { return "custom not implemented" }
+func (*customNotImplemented) NotImplemented() {}
+
+func newInternalErr() error { return &customInternal{} }
+
+type customInternal struct{}
+
+func (*customInternal) Error() string { return "custom internal" }
+func (*customInternal) System()       {}
+
+func newUnavailableErr() error { return &customUnavailable{} }
+
+type customUnavailable struct{}
+
+func (*customUnavailable) Error() string { return "custom unavailable" }
+func (*customUnavailable) Unavailable()  {}
+
+func newDataLossErr() error { return &customDataLoss{} }
+
+type customDataLoss struct{}
+
+func (*customDataLoss) Error() string { return "custom data loss" }
+func (*customDataLoss) DataLoss()     {}
+
+func newUnauthorizedErr() error { return &customUnauthorized{} }
+
+type customUnauthorized struct{}
+
+func (*customUnauthorized) Error() string { return "custom unauthorized" }
+func (*customUnauthorized) Unauthorized() {}

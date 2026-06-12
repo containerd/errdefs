@@ -30,6 +30,10 @@ func TestInvalidArgument(t *testing.T) {
 		&errInvalidArgument{},
 		&customInvalidArgument{},
 		&wrappedInvalidArgument{errors.New("invalid parameter")},
+		&customMessage{err: ErrInvalidArgument, msg: "custom_message"},
+		&causerOnlyError{ErrInvalidArgument},
+		&unwrapperOnlyError{ErrInvalidArgument},
+		&multiError{errors.New("invalid parameter"), ErrNotFound, ErrInvalidArgument},
 	} {
 		if !IsInvalidArgument(match) {
 			t.Errorf("error did not match invalid argument: %#v", match)
@@ -203,3 +207,40 @@ func (*customInvalidArgument) InvalidParameter() {}
 type wrappedInvalidArgument struct{ error }
 
 func (*wrappedInvalidArgument) InvalidParameter() {}
+
+// causerOnlyError implements Causer interface, not Wrapper.
+type causerOnlyError struct {
+	error
+}
+
+func (c *causerOnlyError) Error() string {
+	return c.error.Error()
+}
+
+func (c *causerOnlyError) Cause() error {
+	return c.error
+}
+
+// unwrapperOnlyError implements Wrapper interface, not Causer.
+type unwrapperOnlyError struct {
+	error
+}
+
+func (c *unwrapperOnlyError) Error() string {
+	return c.error.Error()
+}
+
+func (c *unwrapperOnlyError) Unwrap() error {
+	return c.error
+}
+
+// multiError implements Wrapper interface, not Causer.
+type multiError []error
+
+func (c *multiError) Error() string {
+	return "multi error"
+}
+
+func (c *multiError) Unwrap() []error {
+	return *c
+}

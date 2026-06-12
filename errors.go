@@ -417,6 +417,11 @@ func isInterface[T any](err error) bool {
 				}
 			}
 			return false
+		case interface{ Cause() error }:
+			err = x.Cause()
+			if err == nil {
+				return false
+			}
 		default:
 			return false
 		}

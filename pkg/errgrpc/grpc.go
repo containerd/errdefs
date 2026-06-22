@@ -222,7 +222,17 @@ func ToNative(err error) error {
 		code = s.Code()
 	} else {
 		desc = err.Error()
-		code = codes.Unknown
+		// No gRPC status: default to Unknown, but map native context
+		// sentinels to their code so the switch below restores them
+		// instead of reclassifying as errdefs.ErrUnknown.
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			code = codes.DeadlineExceeded
+		case errors.Is(err, context.Canceled):
+			code = codes.Canceled
+		default:
+			code = codes.Unknown
+		}
 	}
 
 	var cls error // divide these into error classes, becomes the cause

@@ -274,3 +274,72 @@ func TestGRPCNestedError(t *testing.T) {
 
 	checkError(ToNative(ToGRPC(werr)))
 }
+
+
+// TestToNativeContextSentinels verifies that ToNative preserves the identity
+// of native context sentinels (context.DeadlineExceeded and context.Canceled)
+// when they are passed directly, without first being mapped to a gRPC status
+// error via ToGRPC. This is the path taken when a ttrpc/gRPC client returns
+// ctx.Err() on a per-call deadline and the caller runs it through ToNative.
+//
+// Unlike TestGRPCRoundTrip, these cases do NOT go through ToGRPC first, so
+// status.FromError reports codes.Unknown. Without preserving the sentinel,
+// the result wraps errdefs.ErrUnknown and errdefs.IsDeadlineExceeded /
+// errdefs.IsCanceled stop recognizing it.
+func TestToNativeContextSentinels(t *testing.T) {
+	for _, testcase := range []struct {
+		name  string
+		input error
+		cause error
+		is    func(error) bool
+		str   string
+	}{
+		{
+			name:  "bare deadline exceeded",
+			input: context.DeadlineExceeded,
+			cause: context.DeadlineExceeded,
+			is:    errdefs.IsDeadlineExceeded,
+			str:   "context deadline exceeded",
+		},
+		{
+			name:  "wrapped deadline exceeded",
+			input: fmt.Errorf("get state for abc: %w", context.DeadlineExceeded),
+			cause: context.DeadlineExceeded,
+			is:    errdefs.IsDeadlineExceeded,
+			str:   "get state for abc: context deadline exceeded",
+		},
+		{
+			name:  "bare canceled",
+			input: context.Canceled,
+			cause: context.Canceled,
+			is:    errdefs.IsCanceled,
+			str:   "context canceled",
+		},
+		{
+			name:  "wrapped canceled",
+			input: fmt.Errorf("operation aborted: %w", context.Canceled),
+			cause: context.Canceled,
+			is:    errdefs.IsCanceled,
+			str:   "operation aborted: context canceled",
+		},
+	} {
+		t.Run(testcase.name, func(t *testing.T) {
+			nerr := ToNative(testcase.input)
+			t.Logf("input: %v, recovered: %v", testcase.input, nerr)
+
+			if !errors.Is(nerr, testcase.cause) {
+				t.Fatalf("unexpected cause: !errors.Is(%v, %v)", nerr, testcase.cause)
+			}
+			if !testcase.is(nerr) {
+				t.Fatalf("errdefs Is helper did not match recovered error: %v", nerr)
+			}
+			// The sentinel must not be reclassified as an unknown error.
+			if errdefs.IsUnknown(nerr) {
+				t.Fatalf("recovered error misclassified as unknown: %v", nerr)
+			}
+			if nerr.Error() != testcase.str {
+				t.Fatalf("unexpected string: %q != %q", nerr.Error(), testcase.str)
+			}
+		})
+	}
+}

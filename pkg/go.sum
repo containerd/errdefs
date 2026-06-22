@@ -1,5 +1,5 @@
-github.com/containerd/errdefs v0.3.0 h1:FSZgGOeK4yuT/+DnF07/Olde/q4KBoMsaamhXxIMDp4=
-github.com/containerd/errdefs v0.3.0/go.mod h1:+YBYIdtsnF4Iw6nWZhJcqGSg/dwvV7tyJ/kCkyJ2k+M=
+github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
+github.com/containerd/errdefs v1.0.0/go.mod h1:+YBYIdtsnF4Iw6nWZhJcqGSg/dwvV7tyJ/kCkyJ2k+M=
 github.com/containerd/typeurl/v2 v2.3.0 h1:HZHPhRWo5XMy3QGQoPrUzbW/2ckwjfweHmOwlkIrPAQ=
 github.com/containerd/typeurl/v2 v2.3.0/go.mod h1:Qk+PAdUYArVj41TnGi6rJ+48RF0PkcTc4i/taoBcK0w=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
